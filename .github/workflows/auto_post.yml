@@ -1,0 +1,40 @@
+name: フランス留学ブログ 自動投稿
+
+on:
+  schedule:
+    # 毎週火曜・金曜 日本時間 9:00（UTC 0:00）
+    - cron: "0 0 * * 2"   # 火曜
+    - cron: "0 0 * * 5"   # 金曜
+  workflow_dispatch:        # 手動実行ボタン付き
+
+jobs:
+  post-blog:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 依存パッケージをインストール
+        run: pip install anthropic requests
+
+      - name: ブログ記事を生成・投稿
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          WP_URL:            ${{ secrets.WP_URL }}
+          WP_USER:           ${{ secrets.WP_USER }}
+          WP_APP_PASS:       ${{ secrets.WP_APP_PASS }}
+        run: python blog-automation/blog_auto_post.py
+
+      - name: 投稿ログをコミット
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add blog-automation/post_log.jsonl || true
+          git diff --staged --quiet || git commit -m "📝 自動投稿ログ更新 $(date +'%Y-%m-%d')"
+          git push || true
