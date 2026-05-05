@@ -29,7 +29,7 @@ jobs:
           WP_URL:            ${{ secrets.WP_URL }}
           WP_USER:           ${{ secrets.WP_USER }}
           WP_APP_PASS:       ${{ secrets.WP_APP_PASS }}
-        run: python blog-automation/blog_auto_post.py
+        run: python blog_auto_post.py
 
       - name: 投稿ログをコミット
         run: |
