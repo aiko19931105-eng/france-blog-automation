@@ -1,7 +1,8 @@
 """
-AP留学ブログ 自動投稿スクリプト v2
+AP留学ブログ 自動投稿スクリプト v3
 - Claude AIで最新情報を含む記事を生成
 - AP留学のサービス情報・導線を全記事に組み込み
+- Unsplashからフランス関連写真を自動取得してアイキャッチに設定
 - WordPress自動公開
 """
 
@@ -13,9 +14,10 @@ from datetime import datetime
 from anthropic import Anthropic
 
 # ── 設定 ──────────────────────────────────────────────
-WP_URL      = os.environ["WP_URL"]
-WP_USER     = os.environ["WP_USER"]
-WP_APP_PASS = os.environ["WP_APP_PASS"]
+WP_URL       = os.environ["WP_URL"]
+WP_USER      = os.environ["WP_USER"]
+WP_APP_PASS  = os.environ["WP_APP_PASS"]
+UNSPLASH_KEY = os.environ["UNSPLASH_KEY"]   # Unsplash Access Key
 
 client = Anthropic()
 
@@ -71,19 +73,88 @@ CTA_HTML = """
 
 # ── SEOキーワードリスト ────────────────────────────────
 KEYWORD_POOL = [
-    {"main": "フランス留学 費用", "sub": ["フランス 大学 学費", "フランス留学 奨学金", "フランス 生活費 学生"], "angle": "費用の全体像と節約術"},
-    {"main": "フランス語学学校 おすすめ パリ", "sub": ["パリ 語学学校 選び方", "フランス語 短期留学", "アリアンス・フランセーズ"], "angle": "学校の選び方と特徴比較"},
-    {"main": "フランス 学生ビザ 申請 方法", "sub": ["Etudes en France", "France-Visas 書き方", "フランス ビザ 必要書類 2024"], "angle": "ビザ申請の手順と注意点"},
-    {"main": "フランス留学 準備 やること", "sub": ["フランス留学 持ち物リスト", "渡仏前 チェックリスト", "海外留学 保険 おすすめ"], "angle": "渡仏前に必ずやること一覧"},
-    {"main": "パリ アパート 探し方 留学生", "sub": ["コロカシオン パリ", "学生寮 フランス", "パリ 住居 短期"], "angle": "住む場所の選択肢と探し方"},
-    {"main": "フランス 短期留学 1ヶ月", "sub": ["フランス語 上達 コツ", "短期留学 メリット デメリット", "1ヶ月 フランス 費用"], "angle": "短期でも得られる経験と効果"},
-    {"main": "ワーキングホリデー フランス 条件", "sub": ["フランス ワーホリ ビザ 申請", "ワーホリ フランス 仕事", "フランス ワーホリ 費用"], "angle": "ワーホリで行くフランスの全貌"},
-    {"main": "フランス 銀行口座 開設 留学生", "sub": ["Wise フランス", "フランス SIMカード おすすめ", "パリ 生活費 1ヶ月"], "angle": "現地生活を始めるための手続き"},
-    {"main": "フランス留学 語学学校 費用", "sub": ["語学学校 学費 比較", "フランス語 レベル 上げ方", "語学学校 スケジュール"], "angle": "語学学校の費用と選び方"},
-    {"main": "パリ 観光 留学生 おすすめ", "sub": ["パリ 穴場 スポット", "フランス 週末 旅行", "パリ 美術館 無料"], "angle": "留学中に行くべきパリのスポット"},
-    {"main": "フランス 文化 違い 日本", "sub": ["フランス人 習慣", "パリ カフェ 文化", "フランス マナー 注意"], "angle": "知っておくべきフランスの文化"},
-    {"main": "フランス留学 エージェント 選び方", "sub": ["留学エージェント 比較", "現地エージェント メリット", "フランス留学 サポート"], "angle": "エージェント選びで失敗しないために"},
+    {"main": "フランス留学 費用",              "sub": ["フランス 大学 学費", "フランス留学 奨学金", "フランス 生活費 学生"],          "angle": "費用の全体像と節約術",             "photo": "paris study abroad student"},
+    {"main": "フランス語学学校 おすすめ パリ",  "sub": ["パリ 語学学校 選び方", "フランス語 短期留学", "アリアンス・フランセーズ"],      "angle": "学校の選び方と特徴比較",           "photo": "paris classroom language school"},
+    {"main": "フランス 学生ビザ 申請 方法",     "sub": ["Etudes en France", "France-Visas 書き方", "フランス ビザ 必要書類"],           "angle": "ビザ申請の手順と注意点",           "photo": "paris documents passport travel"},
+    {"main": "フランス留学 準備 やること",      "sub": ["フランス留学 持ち物リスト", "渡仏前 チェックリスト", "海外留学 保険 おすすめ"], "angle": "渡仏前に必ずやること一覧",         "photo": "suitcase travel preparation paris"},
+    {"main": "パリ アパート 探し方 留学生",     "sub": ["コロカシオン パリ", "学生寮 フランス", "パリ 住居 短期"],                      "angle": "住む場所の選択肢と探し方",         "photo": "paris apartment haussmann building"},
+    {"main": "フランス 短期留学 1ヶ月",         "sub": ["フランス語 上達 コツ", "短期留学 メリット デメリット", "1ヶ月 フランス 費用"],   "angle": "短期でも得られる経験と効果",       "photo": "paris eiffel tower Seine river"},
+    {"main": "ワーキングホリデー フランス 条件", "sub": ["フランス ワーホリ ビザ 申請", "ワーホリ フランス 仕事", "フランス ワーホリ 費用"],"angle": "ワーホリで行くフランスの全貌",     "photo": "paris working lifestyle cafe"},
+    {"main": "フランス 銀行口座 開設 留学生",   "sub": ["Wise フランス", "フランス SIMカード おすすめ", "パリ 生活費 1ヶ月"],           "angle": "現地生活を始めるための手続き",     "photo": "paris daily life student city"},
+    {"main": "フランス留学 語学学校 費用",      "sub": ["語学学校 学費 比較", "フランス語 レベル 上げ方", "語学学校 スケジュール"],       "angle": "語学学校の費用と選び方",           "photo": "paris school study books"},
+    {"main": "パリ 観光 留学生 おすすめ",       "sub": ["パリ 穴場 スポット", "フランス 週末 旅行", "パリ 美術館 無料"],                "angle": "留学中に行くべきパリのスポット",   "photo": "paris louvre montmartre tourism"},
+    {"main": "フランス 文化 違い 日本",         "sub": ["フランス人 習慣", "パリ カフェ 文化", "フランス マナー 注意"],                  "angle": "知っておくべきフランスの文化",     "photo": "paris cafe boulangerie culture"},
+    {"main": "フランス留学 エージェント 選び方", "sub": ["留学エージェント 比較", "現地エージェント メリット", "フランス留学 サポート"],   "angle": "エージェント選びで失敗しないために","photo": "paris consulting meeting support"},
 ]
+
+# ── Unsplash 写真取得 ──────────────────────────────────
+def fetch_unsplash_photo(photo_query: str) -> dict | None:
+    """Unsplashからキーワードに合うフランスらしい写真を取得"""
+    try:
+        resp = requests.get(
+            "https://api.unsplash.com/photos/random",
+            params={
+                "query":          photo_query,
+                "orientation":    "landscape",
+                "content_filter": "high",
+            },
+            headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"},
+            timeout=15
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "url":          data["urls"]["regular"],
+            "alt":          data["alt_description"] or photo_query,
+            "photographer": data["user"]["name"],
+            "photo_page":   data["links"]["html"],
+        }
+    except Exception as e:
+        print(f"  ⚠️ Unsplash取得失敗: {e}")
+        return None
+
+
+def upload_image_to_wordpress(photo: dict, title: str) -> int | None:
+    """写真をWordPressメディアにアップロードしてIDを返す"""
+    try:
+        img_resp = requests.get(photo["url"], timeout=30)
+        img_resp.raise_for_status()
+
+        endpoint = f"{WP_URL.rstrip('/')}/wp-json/wp/v2/media"
+        filename  = f"france-{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
+
+        # アップロード
+        upload = requests.post(
+            endpoint,
+            data=img_resp.content,
+            auth=(WP_USER, WP_APP_PASS),
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Type":        "image/jpeg",
+            },
+            timeout=30
+        )
+        upload.raise_for_status()
+        media_id = upload.json()["id"]
+
+        # altテキストとUnsplashクレジットを設定
+        requests.post(
+            f"{endpoint}/{media_id}",
+            json={
+                "alt_text": (photo["alt"] or title)[:125],
+                "caption":  f'Photo by <a href="{photo["photo_page"]}" target="_blank">{photo["photographer"]}</a> on <a href="https://unsplash.com" target="_blank">Unsplash</a>',
+            },
+            auth=(WP_USER, WP_APP_PASS),
+            timeout=15
+        )
+
+        print(f"  📷 アイキャッチ画像アップロード完了 (ID: {media_id})")
+        return media_id
+
+    except Exception as e:
+        print(f"  ⚠️ 画像アップロード失敗: {e}")
+        return None
+
 
 # ── 記事生成 ───────────────────────────────────────────
 def generate_article(keyword_data: dict) -> dict:
@@ -117,7 +188,7 @@ def generate_article(keyword_data: dict) -> dict:
 【必須構成】
 1. タイトル（H1）: メインキーワードを含む、読みたくなるタイトル（32〜45文字）
 2. リード文（150〜200字）: 読者の悩みに共感し、この記事で何がわかるかを伝える
-3. H2見出し 3〜4個（各800〜600字程度）
+3. H2見出し 3〜4個（各600〜800字程度）
 4. まとめ（200字）: 読者への行動を促す
 5. SEOメタディスクリプション（120〜130文字）
 
@@ -144,15 +215,12 @@ def generate_article(keyword_data: dict) -> dict:
         raw = raw.split("```")[1].split("```")[0].strip()
 
     article = json.loads(raw)
-
-    # CTA（導線）を本文末尾に追加
     article["content"] = article["content"] + CTA_HTML
-
     return article
 
 
 # ── WordPress投稿 ──────────────────────────────────────
-def post_to_wordpress(article: dict) -> dict:
+def post_to_wordpress(article: dict, featured_media_id: int | None = None) -> dict:
     endpoint = f"{WP_URL.rstrip('/')}/wp-json/wp/v2/posts"
 
     payload = {
@@ -162,10 +230,13 @@ def post_to_wordpress(article: dict) -> dict:
         "excerpt": article.get("meta_description", ""),
         "tags":    get_or_create_tags(article.get("tags", [])),
         "meta": {
-            "_yoast_wpseo_metadesc":  article.get("meta_description", ""),
-            "_yoast_wpseo_focuskw":   article.get("focus_keyword", ""),
+            "_yoast_wpseo_metadesc": article.get("meta_description", ""),
+            "_yoast_wpseo_focuskw":  article.get("focus_keyword", ""),
         }
     }
+
+    if featured_media_id:
+        payload["featured_media"] = featured_media_id
 
     resp = requests.post(
         endpoint,
@@ -205,9 +276,8 @@ def get_used_keywords() -> list:
         return []
 
 def pick_keyword(pool: list) -> dict:
-    used = get_used_keywords()
+    used   = get_used_keywords()
     unused = [k for k in pool if k["main"] not in used]
-    # 全部使ったらリセット
     if not unused:
         unused = pool
     return random.choice(unused)
@@ -217,23 +287,35 @@ def pick_keyword(pool: list) -> dict:
 def main():
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] AP留学ブログ 自動投稿 開始")
 
+    # キーワード選択
     keyword = pick_keyword(KEYWORD_POOL)
     print(f"  キーワード: {keyword['main']}")
 
+    # アイキャッチ画像を取得・アップロード
+    print("  📷 Unsplashから写真を取得中...")
+    photo = fetch_unsplash_photo(keyword["photo"])
+    featured_media_id = None
+    if photo:
+        featured_media_id = upload_image_to_wordpress(photo, keyword["main"])
+
+    # 記事生成
     print("  Claude AI で記事を生成中...")
     article = generate_article(keyword)
     print(f"  タイトル: {article['title']}")
 
+    # WordPress投稿
     print("  WordPress に投稿中...")
-    result = post_to_wordpress(article)
+    result = post_to_wordpress(article, featured_media_id)
     print(f"  ✅ 公開完了！URL: {result.get('link', '不明')}")
 
+    # ログ保存
     log = {
-        "date":     datetime.now().isoformat(),
-        "keyword":  keyword["main"],
-        "title":    article["title"],
-        "post_id":  result.get("id"),
-        "url":      result.get("link"),
+        "date":      datetime.now().isoformat(),
+        "keyword":   keyword["main"],
+        "title":     article["title"],
+        "post_id":   result.get("id"),
+        "url":       result.get("link"),
+        "photo_by":  photo["photographer"] if photo else None,
     }
     with open("post_log.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps(log, ensure_ascii=False) + "\n")
