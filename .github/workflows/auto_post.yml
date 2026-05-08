@@ -29,6 +29,7 @@ jobs:
           WP_URL:            ${{ secrets.WP_URL }}
           WP_USER:           ${{ secrets.WP_USER }}
           WP_APP_PASS:       ${{ secrets.WP_APP_PASS }}
+          UNSPLASH_KEY:      ${{ secrets.UNSPLASH_KEY }}
         run: python blog_auto_post.py
 
       - name: 投稿ログをコミット
