@@ -207,24 +207,22 @@ def generate_article(keyword_data: dict) -> dict:
         max_tokens=5000,
         messages=[{"role": "user", "content": prompt}]
     )
-
-raw = response.content[0].text.strip()
+    raw = response.content[0].text.strip()
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
 
-    # JSON内の改行・制御文字を安全に処理
     try:
         article = json.loads(raw)
     except json.JSONDecodeError:
-        # contentフィールドの改行が原因のことが多いので再試行
         import re
         raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
         article = json.loads(raw)
 
     article["content"] = article["content"] + CTA_HTML
     return article
+
 
 
 # ── WordPress投稿 ──────────────────────────────────────
