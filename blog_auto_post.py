@@ -18,7 +18,6 @@ WP_URL       = os.environ["WP_URL"]
 WP_USER      = os.environ["WP_USER"]
 WP_APP_PASS  = os.environ["WP_APP_PASS"]
 UNSPLASH_KEY = os.environ["UNSPLASH_KEY"]
-UNSPLASH_KEY:      ${{ secrets.UNSPLASH_KEY }}# Unsplash Access Key
 
 client = Anthropic()
 
