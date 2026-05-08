@@ -214,11 +214,11 @@ def generate_article(keyword_data: dict) -> dict:
         raw = raw.split("```")[1].split("```")[0].strip()
 
     try:
-        article = json.loads(raw)
+        article = json.loads(raw, strict=False)
     except json.JSONDecodeError:
         import re
-        raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
-        article = json.loads(raw)
+        raw = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
+        article = json.loads(raw, strict=False)
 
     article["content"] = article["content"] + CTA_HTML
     return article
