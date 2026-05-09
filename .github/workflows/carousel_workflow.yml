@@ -1,6 +1,9 @@
 name: carousel-discord
 
 on:
+  schedule:
+    - cron: "0 0 * * 4"   # 木曜 UTC 0:00 = JST 9:00
+    - cron: "0 0 * * 0"   # 日曜 UTC 0:00 = JST 9:00
   workflow_dispatch:
 
 jobs:
