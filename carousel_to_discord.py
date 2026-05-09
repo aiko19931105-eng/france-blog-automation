@@ -244,6 +244,57 @@ def make_cover(slide: dict, bg_bytes: bytes | None) -> bytes:
     buf.seek(0)
     return buf.getvalue()
 
+# ── パリイラスト描画 ────────────────────────────────────
+def draw_paris_illust(draw, num: int, cx: int, cy: int, size: int):
+    import math
+    s = size
+    c = ACCENT
+    soft = BOXBORDER
+    cream = (245, 225, 210)
+
+    if num == 2:
+        # カフェカップ
+        draw.ellipse([cx-s, cy+s//2, cx+s, cy+s//2+s//4], fill=soft)
+        draw.rounded_rectangle([cx-s//2, cy-s//4, cx+s//2, cy+s//2], radius=s//6, fill=cream, outline=c, width=3)
+        draw.arc([cx+s//3, cy, cx+s//3+s//2, cy+s//2], start=300, end=60, fill=c, width=3)
+        for ox in [-s//4, 0, s//4]:
+            draw.arc([cx+ox-8, cy-s, cx+ox+8, cy-s//3], start=200, end=340, fill=soft, width=3)
+
+    elif num == 3:
+        # エッフェル塔
+        draw.polygon([cx-s, cy+s, cx-s//2, cy-s//4], fill=soft)
+        draw.polygon([cx+s, cy+s, cx+s//2, cy-s//4], fill=soft)
+        draw.rectangle([cx-s//2, cy-s//4, cx+s//2, cy-s//3-4], fill=soft)
+        draw.polygon([cx-s//3, cy-s//3, cx+s//3, cy-s//3, cx, cy-s], fill=c)
+        draw.line([cx, cy-s, cx, cy-s-s//4], fill=ACCENT, width=3)
+
+    elif num == 4:
+        # お花
+        petal_c = (240, 180, 170)
+        center_c = (250, 220, 180)
+        for angle in range(0, 360, 60):
+            rad = math.radians(angle)
+            px = cx + int(s * 0.55 * math.cos(rad))
+            py = cy + int(s * 0.55 * math.sin(rad))
+            draw.ellipse([px-s//3, py-s//3, px+s//3, py+s//3], fill=petal_c, outline=c, width=2)
+        draw.ellipse([cx-s//4, cy-s//4, cx+s//4, cy+s//4], fill=center_c, outline=c, width=2)
+        draw.line([cx, cy+s//4, cx, cy+s], fill=(150, 180, 120), width=4)
+        draw.ellipse([cx, cy+s//2, cx+s//2, cy+s*3//4], fill=(170, 200, 140), outline=(130,160,100), width=2)
+
+    elif num == 5:
+        # 飛行機
+        draw.polygon([cx-s, cy, cx+s, cy-s//5, cx+s, cy+s//5], fill=soft)
+        draw.polygon([cx-s//4, cy-s//4, cx+s//3, cy-s//4, cx+s//4, cy-s*2//3], fill=c)
+        draw.polygon([cx-s//2, cy+s//5, cx+s//5, cy+s//5, cx, cy+s//2], fill=c)
+
+    elif num == 6:
+        # パリのアパルトマン
+        draw.rectangle([cx-s*2//3, cy-s//2, cx+s*2//3, cy+s*2//3], fill=cream, outline=c, width=3)
+        draw.polygon([cx-s*3//4, cy-s//2, cx+s*3//4, cy-s//2, cx, cy-s], fill=soft, outline=c)
+        for wx in [cx-s//3, cx+s//8]:
+            draw.rectangle([wx, cy-s//4, wx+s//4, cy+s//8], fill=soft, outline=c, width=2)
+        draw.rounded_rectangle([cx-s//8, cy+s//5, cx+s//8, cy+s*2//3], radius=s//10, fill=soft, outline=c, width=2)
+
 # ── スライド2〜6：POINTスライド ────────────────────────
 def make_point_slide(slide: dict, bg_dots) -> bytes:
     img  = Image.new("RGB", (W, H), BG)
@@ -280,6 +331,12 @@ def make_point_slide(slide: dict, bg_dots) -> bytes:
         draw.text((100, by2), "・", font=body_f, fill=ACCENT)
         draw.text((140, by2), b,   font=body_f, fill=TEXTDARK)
         by2 += 70
+
+    # パリイラスト（空白エリアに配置）
+    illust_y = by2 + 60
+    illust_size = min(120, (H - 100 - illust_y) // 2)
+    if illust_size > 40:
+        draw_paris_illust(draw, current, W//2, illust_y + illust_size, illust_size)
 
     draw_next_btn(draw)
     draw_brand(draw)
