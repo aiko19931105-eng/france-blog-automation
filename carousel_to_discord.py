@@ -244,59 +244,79 @@ def make_cover(slide: dict, bg_bytes: bytes | None) -> bytes:
     buf.seek(0)
     return buf.getvalue()
 
-# ── パリイラスト描画 ────────────────────────────────────
-def draw_paris_illust(draw, num: int, cx: int, cy: int, size: int):
-    import math
-    s = size
-    c = ACCENT
-    soft = BOXBORDER
-    cream = (245, 225, 210)
+# ── スライドごとの写真クエリ ─────────────────────────────
+SLIDE_PHOTO_QUERIES = {
+    2: "paris cafe coffee croissant",
+    3: "paris eiffel tower romantic",
+    4: "paris flower market colorful",
+    5: "paris travel airport journey",
+    6: "paris apartment haussmann street",
+}
 
-    if num == 2:
-        # カフェカップ
-        draw.ellipse([cx-s, cy+s//2, cx+s, cy+s//2+s//4], fill=soft)
-        draw.rounded_rectangle([cx-s//2, cy-s//4, cx+s//2, cy+s//2], radius=s//6, fill=cream, outline=c, width=3)
-        draw.arc([cx+s//3, cy, cx+s//3+s//2, cy+s//2], start=300, end=60, fill=c, width=3)
-        for ox in [-s//4, 0, s//4]:
-            draw.arc([cx+ox-8, cy-s, cx+ox+8, cy-s//3], start=200, end=340, fill=soft, width=3)
+def fetch_slide_photo(query: str) -> bytes | None:
+    """Unsplashからスライド用写真を取得"""
+    try:
+        r = requests.get(
+            "https://api.unsplash.com/photos/random",
+            params={"query": query, "orientation": "landscape", "content_filter": "high"},
+            headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"},
+            timeout=15
+        )
+        r.raise_for_status()
+        img_url = r.json()["urls"]["regular"]
+        ir = requests.get(img_url, timeout=30)
+        ir.raise_for_status()
+        return ir.content
+    except Exception as e:
+        print(f"  ⚠️ スライド写真取得失敗: {e}")
+        return None
 
-    elif num == 3:
-        # エッフェル塔
-        draw.polygon([cx-s, cy+s, cx-s//2, cy], fill=soft)
-        draw.polygon([cx+s, cy+s, cx+s//2, cy], fill=soft)
-        draw.rectangle([cx-s//2, cy-10, cx+s//2, cy+10], fill=soft)
-        draw.polygon([cx-s//3, cy, cx+s//3, cy, cx, cy-s], fill=c)
-        draw.line([cx, cy-s, cx, cy-s-s//4], fill=ACCENT, width=3)
+def apply_slide_photo(img: Image.Image, photo_bytes: bytes, area_top: int) -> Image.Image:
+    """写真を下エリアに配置し、上部をフェードさせてなじませる"""
+    area_h = H - area_top - 100  # NEXTボタンの上まで
+    if area_h < 80:
+        return img
+    try:
+        photo = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
+        # アスペクト比を保ちながらリサイズ
+        pw, ph = photo.size
+        scale = max(W / pw, area_h / ph)
+        nw, nh = int(pw * scale), int(ph * scale)
+        photo = photo.resize((nw, nh), Image.LANCZOS)
+        # 中央クロップ
+        lx = (nw - W) // 2
+        ly = (nh - area_h) // 2
+        photo = photo.crop([lx, ly, lx+W, ly+area_h])
 
-    elif num == 4:
-        # お花
-        petal_c = (240, 180, 170)
-        center_c = (250, 220, 180)
-        for angle in range(0, 360, 60):
-            rad = math.radians(angle)
-            px = cx + int(s * 0.55 * math.cos(rad))
-            py = cy + int(s * 0.55 * math.sin(rad))
-            draw.ellipse([px-s//3, py-s//3, px+s//3, py+s//3], fill=petal_c, outline=c, width=2)
-        draw.ellipse([cx-s//4, cy-s//4, cx+s//4, cy+s//4], fill=center_c, outline=c, width=2)
-        draw.line([cx, cy+s//4, cx, cy+s], fill=(150, 180, 120), width=4)
-        draw.ellipse([cx, cy+s//2, cx+s//2, cy+s*3//4], fill=(170, 200, 140), outline=(130,160,100), width=2)
+        # ウォームトーン（ベージュ×ピンク）に色調補正
+        r, g, b, a = photo.split()
+        r = r.point(lambda x: min(255, int(x * 1.08)))
+        g = g.point(lambda x: min(255, int(x * 0.96)))
+        b = b.point(lambda x: min(255, int(x * 0.88)))
+        photo = Image.merge("RGBA", (r, g, b, a))
 
-    elif num == 5:
-        # 飛行機
-        draw.polygon([cx-s, cy, cx+s, cy-s//5, cx+s, cy+s//5], fill=soft)
-        draw.polygon([cx-s//4, cy-s//4, cx+s//3, cy-s//4, cx+s//4, cy-s*2//3], fill=c)
-        draw.polygon([cx-s//2, cy+s//5, cx+s//5, cy+s//5, cx, cy+s//2], fill=c)
+        # 上部フェードマスク（背景となじませる）
+        mask = Image.new("L", (W, area_h), 255)
+        md = ImageDraw.Draw(mask)
+        fade_h = area_h // 3
+        for i in range(fade_h):
+            alpha = int(255 * (i / fade_h))
+            md.line([(0, i), (W, i)], fill=alpha)
 
-    elif num == 6:
-        # パリのアパルトマン
-        draw.rectangle([cx-s*2//3, cy-s//2, cx+s*2//3, cy+s*2//3], fill=cream, outline=c, width=3)
-        draw.polygon([cx-s*3//4, cy-s//2, cx+s*3//4, cy-s//2, cx, cy-s], fill=soft, outline=c)
-        for wx in [cx-s//3, cx+s//8]:
-            draw.rectangle([wx, cy-s//4, wx+s//4, cy+s//8], fill=soft, outline=c, width=2)
-        draw.rounded_rectangle([cx-s//8, cy+s//5, cx+s//8, cy+s*2//3], radius=s//10, fill=soft, outline=c, width=2)
+        # 半透明オーバーレイで明るさを調整
+        overlay = Image.new("RGBA", (W, area_h), (*BG, 80))
+        photo = Image.alpha_composite(photo, overlay)
+        photo.putalpha(mask)
+
+        img = img.convert("RGBA")
+        img.paste(photo, (0, area_top), photo)
+        return img.convert("RGB")
+    except Exception as e:
+        print(f"  ⚠️ 写真合成失敗: {e}")
+        return img
 
 # ── スライド2〜6：POINTスライド ────────────────────────
-def make_point_slide(slide: dict, bg_dots) -> bytes:
+def make_point_slide(slide: dict, bg_dots, slide_photos: dict) -> bytes:
     img  = Image.new("RGB", (W, H), BG)
     dots = bg_dots.copy()
     img  = Image.alpha_composite(img.convert("RGBA"), dots).convert("RGB")
@@ -332,11 +352,11 @@ def make_point_slide(slide: dict, bg_dots) -> bytes:
         draw.text((140, by2), b,   font=body_f, fill=TEXTDARK)
         by2 += 70
 
-    # パリイラスト（空白エリアに配置）
-    illust_y = by2 + 60
-    illust_size = min(120, (H - 100 - illust_y) // 2)
-    if illust_size > 40:
-        draw_paris_illust(draw, current, W//2, illust_y + illust_size, illust_size)
+    # パリ写真を下エリアに配置
+    photo_top = by2 + 40
+    if current in slide_photos and slide_photos[current] and photo_top < H - 150:
+        img = apply_slide_photo(img, slide_photos[current], photo_top)
+        draw = ImageDraw.Draw(img)
 
     draw_next_btn(draw)
     draw_brand(draw)
@@ -444,6 +464,12 @@ def main():
     ]:
         d.ellipse([x-r,y-r,x+r,y+r], fill=color)
 
+    print("  各スライドの写真を取得中...")
+    slide_photos = {}
+    for num, query in SLIDE_PHOTO_QUERIES.items():
+        slide_photos[num] = fetch_slide_photo(query)
+        print(f"    スライド{num}の写真取得完了")
+
     print("  画像生成中...")
     images = []
     for slide in slides:
@@ -453,7 +479,7 @@ def main():
         elif num == 7:
             images.append(make_cta_slide(slide, img_dots))
         else:
-            images.append(make_point_slide(slide, img_dots))
+            images.append(make_point_slide(slide, img_dots, slide_photos))
         print(f"    スライド {num}/7 完了")
 
     print("  Discord送信中...")
