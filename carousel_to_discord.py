@@ -147,7 +147,9 @@ JSONのみ返してください：
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
-    return json.loads(raw, strict=False)
+    result = json.loads(raw, strict=False)
+    result["caption"] = result.get("caption", "") + CAPTION_FOOTER
+    return result
 
 # ── ページナビ描画 ─────────────────────────────────────
 def draw_top_bar(draw: ImageDraw.Draw, current: int, total: int):
@@ -251,6 +253,7 @@ SLIDE_PHOTO_QUERIES = {
     4: "paris flower market colorful",
     5: "paris travel airport journey",
     6: "paris apartment haussmann street",
+    7: "paris romantic sunset seine",
 }
 
 def fetch_slide_photo(query: str) -> bytes | None:
@@ -367,7 +370,7 @@ def make_point_slide(slide: dict, bg_dots, slide_photos: dict) -> bytes:
     return buf.getvalue()
 
 # ── スライド7：CTA ─────────────────────────────────────
-def make_cta_slide(slide: dict, bg_dots) -> bytes:
+def make_cta_slide(slide: dict, bg_dots, cta_photo: bytes | None = None) -> bytes:
     img  = Image.new("RGB", (W, H), (252, 240, 245))
     dots = bg_dots.copy()
     img  = Image.alpha_composite(img.convert("RGBA"), dots).convert("RGB")
@@ -407,6 +410,12 @@ def make_cta_slide(slide: dict, bg_dots) -> bytes:
     draw.rounded_rectangle([bx, by3, bx+btn_w, by3+btn_h], radius=45, fill=(76, 175, 80))
     btn_f = get_font(44)
     draw.text((W//2, by3+btn_h//2), "LINE で無料相談する", font=btn_f, fill=WHITE, anchor="mm")
+
+    # パリ写真をボタンの下に配置
+    photo_top = by3 + btn_h + 40
+    if cta_photo and photo_top < H - 150:
+        img = apply_slide_photo(img, cta_photo, photo_top)
+        draw = ImageDraw.Draw(img)
 
     draw_brand(draw)
 
@@ -477,7 +486,7 @@ def main():
         if num == 1:
             images.append(make_cover(slide, bg_bytes))
         elif num == 7:
-            images.append(make_cta_slide(slide, img_dots))
+            images.append(make_cta_slide(slide, img_dots, slide_photos.get(7)))
         else:
             images.append(make_point_slide(slide, img_dots, slide_photos))
         print(f"    スライド {num}/7 完了")
