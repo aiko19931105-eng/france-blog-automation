@@ -24,4 +24,5 @@ jobs:
           WP_USER:           ${{ secrets.WP_USER }}
           WP_APP_PASS:       ${{ secrets.WP_APP_PASS }}
           DISCORD_WEBHOOK:   ${{ secrets.DISCORD_WEBHOOK }}
+          UNSPLASH_KEY:      ${{ secrets.UNSPLASH_KEY }}
         run: python carousel_to_discord.py
