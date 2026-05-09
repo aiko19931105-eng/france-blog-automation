@@ -1,47 +1,72 @@
 """
-AP留学 インスタカルーセル自動生成 → Discord送信スクリプト
-- WordPressから最新記事を取得
-- Claude AIでカルーセル7枚分のテキストを生成
-- Pillowでフランスらしいデザイン画像を自動生成
-- Discordに画像7枚＋キャプションを送信
+AP留学 インスタカルーセル自動生成 → Discord送信スクリプト v2
+- パリ写真を背景に文字を重ねるおしゃれなデザイン
+- 40代日本人女性がわくわくするAP留学らしいスタイル
+- 絵文字対応
 """
 
 import os
 import json
+import re
 import textwrap
 import requests
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from anthropic import Anthropic
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 # ── 設定 ──────────────────────────────────────────────
 WP_URL          = os.environ["WP_URL"]
 WP_USER         = os.environ["WP_USER"]
 WP_APP_PASS     = os.environ["WP_APP_PASS"]
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK"]
+UNSPLASH_KEY    = os.environ["UNSPLASH_KEY"]
 
 client = Anthropic()
 
-# ── AP留学ブランドカラー ───────────────────────────────
-COLORS = {
-    "bg":          "#1a1a2e",   # 深紺（背景）
-    "accent":      "#9b59b6",   # パープル
-    "accent2":     "#e8b4d0",   # ライトピンク
-    "text":        "#ffffff",   # 白
-    "subtext":     "#cccccc",   # グレー
-    "card":        "#16213e",   # カード背景
-    "gradient_top":"#2d1b4e",   # グラデ上
-}
+# ── カラーパレット（AP留学らしいベージュ×ピンク×ゴールド） ──
+OVERLAY_COLOR  = (20, 20, 40, 170)    # 深紺半透明オーバーレイ
+TEXT_WHITE     = (255, 255, 255)
+TEXT_CREAM     = (255, 240, 220)
+ACCENT_PINK    = (232, 180, 208)
+ACCENT_GOLD    = (212, 175, 100)
+LINE_COLOR     = (255, 255, 255, 180)
 
-def hex_to_rgb(hex_color: str) -> tuple:
-    h = hex_color.lstrip("#")
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+# ── Unsplashからパリ写真を取得 ─────────────────────────
+PARIS_QUERIES = [
+    "paris eiffel tower golden hour",
+    "paris cafe terrace french",
+    "paris seine river bridge",
+    "paris montmartre street",
+    "paris louvre architecture",
+    "paris haussmann boulevard",
+    "paris flower market",
+]
+
+def fetch_paris_photo() -> bytes | None:
+    """Unsplashからパリ写真を取得"""
+    import random
+    query = random.choice(PARIS_QUERIES)
+    try:
+        resp = requests.get(
+            "https://api.unsplash.com/photos/random",
+            params={"query": query, "orientation": "squarish", "content_filter": "high"},
+            headers={"Authorization": f"Client-ID {UNSPLASH_KEY}"},
+            timeout=15
+        )
+        resp.raise_for_status()
+        data     = resp.json()
+        img_url  = data["urls"]["regular"]
+        img_resp = requests.get(img_url, timeout=30)
+        img_resp.raise_for_status()
+        return img_resp.content
+    except Exception as e:
+        print(f"  ⚠️ Unsplash取得失敗: {e}")
+        return None
 
 
 # ── WordPressから最新記事を取得 ────────────────────────
 def get_latest_post() -> dict | None:
-    """7日前に投稿された記事を取得"""
     try:
         resp = requests.get(
             f"{WP_URL.rstrip('/')}/wp-json/wp/v2/posts",
@@ -51,9 +76,7 @@ def get_latest_post() -> dict | None:
         )
         resp.raise_for_status()
         posts = resp.json()
-        if posts:
-            return posts[0]
-        return None
+        return posts[0] if posts else None
     except Exception as e:
         print(f"  ⚠️ WordPress記事取得失敗: {e}")
         return None
@@ -62,10 +85,8 @@ def get_latest_post() -> dict | None:
 # ── Claude AIでカルーセルテキスト生成 ─────────────────
 def generate_carousel_texts(post: dict) -> dict:
     title   = post.get("title", {}).get("rendered", "")
-    # HTMLタグを除去
-    import re
     content = re.sub(r'<[^>]+>', '', post.get("content", {}).get("rendered", ""))
-    content = content[:3000]  # 長すぎる場合は切り詰め
+    content = content[:3000]
 
     prompt = f"""
 あなたはAP留学（パリ在住12年のフランス留学エージェント）のSNS担当です。
@@ -74,29 +95,32 @@ def generate_carousel_texts(post: dict) -> dict:
 【ブログタイトル】{title}
 【ブログ本文】{content}
 
+【ターゲット】フランス留学・パリ滞在に憧れる40代前後の日本人女性
+【トーン】わくわく感があり、親しみやすく、パリ在住者ならではのリアルな情報
+
 【カルーセル構成】
-- 1枚目：タイトルカード（キャッチーな見出し＋サブタイトル）
-- 2〜6枚目：記事の要点を1枚1ポイントでまとめる（各ポイントに絵文字）
-- 7枚目：まとめ＋AP留学へのCTA（「LINEで無料相談はこちら👇」）
+- 1枚目：タイトルカード（キャッチーな見出し＋「パリ在住12年が教える」などのサブタイトル）
+- 2〜6枚目：記事の要点を1枚1ポイント（短く、具体的に）
+- 7枚目：まとめ＋「LINEで無料相談受付中」CTA
 
-【ルール】
-- 各スライドのテキストは短く（見出し20文字以内、本文60文字以内）
-- フランス在住者ならではのリアルな視点を入れる
-- 読者が「保存したい！」と思えるような有益な内容に
-- インスタのキャプションも作成（ハッシュタグ10個含む）
+【重要ルール】
+- 絵文字は使わない（画像に入れられないため）
+- 各スライドの見出しは15文字以内
+- 本文は50文字以内、2〜3行で収まる量
+- 読者が「保存したい！」と思える有益な内容に
 
-【出力形式】JSONのみで返してください：
+【出力形式】JSONのみ返してください：
 {{
   "slides": [
-    {{"heading": "見出し", "body": "本文テキスト", "emoji": "🗼"}},
-    {{"heading": "見出し", "body": "本文テキスト", "emoji": "💰"}},
-    {{"heading": "見出し", "body": "本文テキスト", "emoji": "📚"}},
-    {{"heading": "見出し", "body": "本文テキスト", "emoji": "🏠"}},
-    {{"heading": "見出し", "body": "本文テキスト", "emoji": "✈️"}},
-    {{"heading": "見出し", "body": "本文テキスト", "emoji": "💡"}},
-    {{"heading": "まとめ", "body": "LINEで無料相談はこちら👇 @ap_ryugaku", "emoji": "📩"}}
+    {{"heading": "見出し", "body": "本文テキスト", "label": "AP留学"}},
+    {{"heading": "見出し", "body": "本文テキスト", "label": "POINT 1"}},
+    {{"heading": "見出し", "body": "本文テキスト", "label": "POINT 2"}},
+    {{"heading": "見出し", "body": "本文テキスト", "label": "POINT 3"}},
+    {{"heading": "見出し", "body": "本文テキスト", "label": "POINT 4"}},
+    {{"heading": "見出し", "body": "本文テキスト", "label": "POINT 5"}},
+    {{"heading": "まとめ", "body": "LINEで無料相談受付中\\n@ap_ryugaku", "label": "AP留学"}}
   ],
-  "caption": "インスタキャプション本文（ハッシュタグ10個含む）",
+  "caption": "インスタキャプション（ハッシュタグ10個含む、改行あり）",
   "blog_title": "{title}"
 }}
 """
@@ -116,110 +140,139 @@ def generate_carousel_texts(post: dict) -> dict:
     return json.loads(raw, strict=False)
 
 
-# ── 画像生成 ───────────────────────────────────────────
-def create_slide_image(slide: dict, slide_num: int, total: int) -> bytes:
+# ── フォント読み込み ───────────────────────────────────
+def load_fonts():
+    font_paths = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Bold.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+    ]
+    font_path_regular = [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    ]
+
+    bold_path    = None
+    regular_path = None
+
+    for p in font_paths:
+        try:
+            ImageFont.truetype(p, 10)
+            bold_path = p
+            break
+        except:
+            continue
+
+    for p in font_path_regular:
+        try:
+            ImageFont.truetype(p, 10)
+            regular_path = p
+            break
+        except:
+            continue
+
+    if bold_path and regular_path:
+        return {
+            "xl":     ImageFont.truetype(bold_path, 80),
+            "large":  ImageFont.truetype(bold_path, 58),
+            "medium": ImageFont.truetype(bold_path, 42),
+            "body":   ImageFont.truetype(regular_path, 34),
+            "small":  ImageFont.truetype(regular_path, 26),
+            "label":  ImageFont.truetype(bold_path, 24),
+        }
+    else:
+        f = ImageFont.load_default()
+        return {k: f for k in ["xl","large","medium","body","small","label"]}
+
+
+# ── スライド画像生成 ───────────────────────────────────
+def create_slide_image(slide: dict, slide_num: int, total: int,
+                        bg_bytes: bytes | None, fonts: dict) -> bytes:
     W, H = 1080, 1080
-    img  = Image.new("RGB", (W, H), hex_to_rgb(COLORS["bg"]))
-    draw = ImageDraw.Draw(img)
 
-    # グラデーション風の背景装飾
-    for i in range(300):
-        alpha = int(60 * (1 - i / 300))
-        color = hex_to_rgb(COLORS["gradient_top"])
-        draw.rectangle([0, i, W, i+1], fill=(*color, alpha))
+    # 背景画像
+    if bg_bytes:
+        bg = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
+        bg = bg.resize((W, H), Image.LANCZOS)
+        # 軽くぼかして文字を読みやすく
+        bg = bg.filter(ImageFilter.GaussianBlur(radius=2))
+    else:
+        bg = Image.new("RGBA", (W, H), (30, 30, 60, 255))
 
-    # 上部アクセントライン
-    draw.rectangle([0, 0, W, 8], fill=hex_to_rgb(COLORS["accent"]))
+    # 半透明オーバーレイ
+    overlay = Image.new("RGBA", (W, H), OVERLAY_COLOR)
+    img     = Image.alpha_composite(bg, overlay).convert("RGB")
+    draw    = ImageDraw.Draw(img)
 
-    # 左側アクセントライン
-    draw.rectangle([0, 0, 8, H], fill=hex_to_rgb(COLORS["accent"]))
+    # 上下のゴールドライン
+    draw.rectangle([0, 0, W, 6], fill=ACCENT_GOLD)
+    draw.rectangle([0, H-6, W, H], fill=ACCENT_GOLD)
 
-    # 右下デコレーション円
-    draw.ellipse([W-200, H-200, W+100, H+100],
-                 fill=hex_to_rgb(COLORS["gradient_top"]))
-    draw.ellipse([W-150, H-150, W+50, H+50],
-                 fill=hex_to_rgb(COLORS["accent"]))
+    # 左右の細いラインで枠感を演出
+    draw.rectangle([0, 0, 5, H], fill=ACCENT_GOLD)
+    draw.rectangle([W-5, 0, W, H], fill=ACCENT_GOLD)
 
-    # フォント（デフォルトフォントを使用）
-    try:
-        font_large  = ImageFont.truetype("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc", 72)
-        font_medium = ImageFont.truetype("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc", 48)
-        font_body   = ImageFont.truetype("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 36)
-        font_small  = ImageFont.truetype("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 28)
-    except:
-        font_large  = ImageFont.load_default()
-        font_medium = font_large
-        font_body   = font_large
-        font_small  = font_large
+    # ブランド名（右上）
+    draw.text((W-40, 30), "AP留学", font=fonts["label"],
+              fill=ACCENT_GOLD, anchor="ra")
 
-    # スライド番号
-    draw.text((30, 20), f"{slide_num}/{total}",
-              font=font_small, fill=hex_to_rgb(COLORS["accent2"]))
+    # スライド番号（左上）
+    draw.text((40, 30), f"{slide_num} / {total}", font=fonts["label"],
+              fill=TEXT_CREAM, anchor="la")
 
-    # ブランド名
-    draw.text((W-200, 20), "AP留学",
-              font=font_small, fill=hex_to_rgb(COLORS["accent2"]))
-
-    # 絵文字（大きく中央上部に）
-    emoji_text = slide.get("emoji", "🗼")
-    draw.text((W//2, 280), emoji_text,
-              font=font_large, fill=hex_to_rgb(COLORS["text"]),
-              anchor="mm")
+    # ラベル（POINT 1 など）
+    label = slide.get("label", "")
+    if label:
+        lw = draw.textlength(label, font=fonts["label"])
+        lx = W // 2 - lw // 2
+        draw.rectangle([lx-16, 200, lx+lw+16, 244], fill=ACCENT_GOLD)
+        draw.text((W//2, 222), label, font=fonts["label"],
+                  fill=(20, 20, 40), anchor="mm")
 
     # 見出し（中央）
     heading = slide.get("heading", "")
-    # 長い場合は折り返し
-    wrapped_heading = textwrap.fill(heading, width=14)
-    draw.text((W//2, 480), wrapped_heading,
-              font=font_medium, fill=hex_to_rgb(COLORS["text"]),
-              anchor="mm", align="center")
+    wrapped_h = textwrap.fill(heading, width=12)
+    draw.text((W//2, 420), wrapped_h, font=fonts["large"],
+              fill=TEXT_WHITE, anchor="mm", align="center")
+
+    # 区切り線
+    draw.rectangle([W//2-80, 510, W//2+80, 514], fill=ACCENT_PINK)
 
     # 本文
     body = slide.get("body", "")
-    wrapped_body = textwrap.fill(body, width=22)
-    draw.text((W//2, 680), wrapped_body,
-              font=font_body, fill=hex_to_rgb(COLORS["subtext"]),
-              anchor="mm", align="center")
+    wrapped_b = textwrap.fill(body, width=20)
+    draw.text((W//2, 680), wrapped_b, font=fonts["body"],
+              fill=TEXT_CREAM, anchor="mm", align="center")
 
-    # 下部アクセントライン
-    draw.rectangle([0, H-8, W, H], fill=hex_to_rgb(COLORS["accent"]))
-
-    # 画像をバイト列に変換
     buf = io.BytesIO()
-    img.save(buf, format="PNG", quality=95)
+    img.save(buf, format="PNG")
     buf.seek(0)
     return buf.getvalue()
 
 
 # ── Discordに送信 ──────────────────────────────────────
-def send_to_discord(carousel_data: dict, images: list[bytes]):
-    """画像7枚＋キャプションをDiscordに送信"""
-
-    # まずテキストメッセージを送信
+def send_to_discord(carousel_data: dict, images: list):
     blog_title = carousel_data.get("blog_title", "")
     caption    = carousel_data.get("caption", "")
 
-    intro_message = {
+    intro = {
         "content": (
             f"📸 **インスタカルーセル準備できました！**\n\n"
-            f"📝 **元記事：** {blog_title}\n\n"
+            f"📝 元記事：{blog_title}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"**【インスタキャプション】**\n{caption}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"⬇️ カルーセル画像7枚（このまま使えます！）"
+            f"⬇️ カルーセル画像 {len(images)}枚（このまま使えます！）"
         )
     }
+    requests.post(DISCORD_WEBHOOK, json=intro, timeout=15)
 
-    requests.post(DISCORD_WEBHOOK, json=intro_message, timeout=15)
-
-    # 画像を1枚ずつ送信
     for i, img_bytes in enumerate(images, 1):
-        files = {
-            "file": (f"carousel_{i:02d}.png", img_bytes, "image/png")
-        }
-        payload = {"content": f"**スライド {i}/7**"}
+        files   = {"file": (f"slide_{i:02d}.png", img_bytes, "image/png")}
+        payload = {"content": f"**スライド {i}/{len(images)}**"}
         requests.post(DISCORD_WEBHOOK, data=payload, files=files, timeout=30)
-        print(f"  📤 スライド {i}/7 送信完了")
+        print(f"  📤 スライド {i}/{len(images)} 送信完了")
 
     print("  ✅ Discord送信完了！")
 
@@ -228,27 +281,32 @@ def send_to_discord(carousel_data: dict, images: list[bytes]):
 def main():
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] カルーセル生成 開始")
 
-    # WordPressから最新記事を取得
+    # WordPress最新記事
     print("  WordPressから記事を取得中...")
     post = get_latest_post()
     if not post:
         print("  ⚠️ 記事が見つかりませんでした")
         return
-
-    title = post.get("title", {}).get("rendered", "タイトルなし")
-    print(f"  記事: {title}")
+    print(f"  記事: {post.get('title',{}).get('rendered','')}")
 
     # カルーセルテキスト生成
     print("  Claude AI でカルーセルテキストを生成中...")
     carousel_data = generate_carousel_texts(post)
-    slides = carousel_data.get("slides", [])
+    slides        = carousel_data.get("slides", [])
     print(f"  {len(slides)}枚分のテキスト生成完了")
+
+    # フォント読み込み
+    fonts = load_fonts()
+
+    # パリ背景写真を1枚取得（全スライド共通）
+    print("  📷 パリ写真を取得中...")
+    bg_bytes = fetch_paris_photo()
 
     # 画像生成
     print("  画像を生成中...")
     images = []
     for i, slide in enumerate(slides, 1):
-        img_bytes = create_slide_image(slide, i, len(slides))
+        img_bytes = create_slide_image(slide, i, len(slides), bg_bytes, fonts)
         images.append(img_bytes)
         print(f"  🖼️  スライド {i}/{len(slides)} 生成完了")
 
