@@ -262,10 +262,10 @@ def draw_paris_illust(draw, num: int, cx: int, cy: int, size: int):
 
     elif num == 3:
         # エッフェル塔
-        draw.polygon([cx-s, cy+s, cx-s//2, cy-s//4], fill=soft)
-        draw.polygon([cx+s, cy+s, cx+s//2, cy-s//4], fill=soft)
-        draw.rectangle([cx-s//2, cy-s//4, cx+s//2, cy-s//3-4], fill=soft)
-        draw.polygon([cx-s//3, cy-s//3, cx+s//3, cy-s//3, cx, cy-s], fill=c)
+        draw.polygon([cx-s, cy+s, cx-s//2, cy], fill=soft)
+        draw.polygon([cx+s, cy+s, cx+s//2, cy], fill=soft)
+        draw.rectangle([cx-s//2, cy-10, cx+s//2, cy+10], fill=soft)
+        draw.polygon([cx-s//3, cy, cx+s//3, cy, cx, cy-s], fill=c)
         draw.line([cx, cy-s, cx, cy-s-s//4], fill=ACCENT, width=3)
 
     elif num == 4:
